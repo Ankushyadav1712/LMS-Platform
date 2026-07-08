@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
+import { getSession } from "@/lib/session";
 
 // Rendered per-request: the catalog reads live data and must not be
 // prerendered at build time (CI builds have no database).
@@ -27,7 +29,7 @@ async function getCatalog() {
 }
 
 export default async function Home() {
-  const { courses, dbDown } = await getCatalog();
+  const [{ courses, dbDown }, session] = await Promise.all([getCatalog(), getSession()]);
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
@@ -35,7 +37,18 @@ export default async function Home() {
         <Link href="/" className="text-lg font-semibold tracking-tight">
           LMS Platform
         </Link>
-        <Badge variant="outline">Week 1 — walking skeleton</Badge>
+        <nav className="flex items-center gap-2">
+          {session ? (
+            <Button render={<Link href="/dashboard" />}>Dashboard</Button>
+          ) : (
+            <>
+              <Button variant="ghost" render={<Link href="/login" />}>
+                Sign in
+              </Button>
+              <Button render={<Link href="/signup" />}>Sign up</Button>
+            </>
+          )}
+        </nav>
       </header>
 
       <section className="mb-12">
