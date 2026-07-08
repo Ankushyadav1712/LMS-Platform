@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Auth & users
+// User/Session/Account/Verification follow Better Auth's expected
+// shape (wired up in Week 2). Credential password hashes live on
+// Account (providerId = "credential"), not on User.
+// ============================================================
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          Role     @default(STUDENT)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions        Session[]
+  accounts        Account[]
+  coursesTeaching Course[]          @relation("InstructorCourses")
+  enrollments     Enrollment[]
+  lectureProgress LectureProgress[]
+  submissions     Submission[]
+  gradesGiven     Grade[]           @relation("Grader")
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verifications")
+}
+
+// ============================================================
+// Courses & curriculum
+// ============================================================
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Category {
+  id      String   @id @default(cuid())
+  name    String
+  slug    String   @unique
+  courses Course[]
+
+  @@map("categories")
+}
+
+model Course {
+  id           String       @id @default(cuid())
+  instructorId String
+  instructor   User         @relation("InstructorCourses", fields: [instructorId], references: [id])
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id])
+  title        String
+  slug         String       @unique
+  description  String?
+  thumbnailKey String?
+  status       CourseStatus @default(DRAFT)
+  publishedAt  DateTime?
+  // Always 0 in v1 (free enrollment). Column future-proofs a payments stretch goal.
+  price        Decimal      @default(0) @db.Decimal(10, 2)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  sections    Section[]
+  enrollments Enrollment[]
+  assignments Assignment[]
+  attachments Attachment[]
+
+  @@index([instructorId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("courses")
+}
+
+model Section {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  position    Int
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lectures    Lecture[]
+  assignments Assignment[]
+
+  @@unique([courseId, position])
+  @@map("sections")
+}
+
+enum LectureType {
+  VIDEO
+  ARTICLE
+}
+
+enum VideoStatus {
+  NONE
+  PROCESSING
+  READY
+  ERRORED
+}
+
+model Lecture {
+  id              String      @id @default(cuid())
+  sectionId       String
+  section         Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  position        Int
+  type            LectureType @default(ARTICLE)
+  // ARTICLE lectures: rich-text body. VIDEO lectures: body optional (show notes).
+  body            String?
+  // VIDEO lectures: object-storage keys for raw upload + processed HLS renditions.
+  videoKey        String?
+  playbackKey     String?
+  durationSeconds Int?
+  videoStatus     VideoStatus @default(NONE)
+  isFreePreview   Boolean     @default(false)
+  isPublished     Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  progress    LectureProgress[]
+  attachments Attachment[]
+
+  @@unique([sectionId, position])
+  @@map("lectures")
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lectureId String?
+  lecture   Lecture? @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  name      String
+  fileKey   String
+  sizeBytes Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([courseId])
+  @@index([lectureId])
+  @@map("attachments")
+}
+
+// ============================================================
+// Enrollment & progress
+// ============================================================
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  DROPPED
+}
+
+model Enrollment {
+  id          String           @id @default(cuid())
+  studentId   String
+  student     User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId    String
+  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  status      EnrollmentStatus @default(ACTIVE)
+  enrolledAt  DateTime         @default(now())
+  completedAt DateTime?
+
+  // The DB, not the app, prevents double-enrollment.
+  @@unique([studentId, courseId])
+  @@index([courseId])
+  @@map("enrollments")
+}
+
+model LectureProgress {
+  id                String    @id @default(cuid())
+  studentId         String
+  student           User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lectureId         String
+  lecture           Lecture   @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  isCompleted       Boolean   @default(false)
+  lastWatchedSecond Int       @default(0)
+  completedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+
+  // Upserted from the player heartbeat. Course % is computed, never stored.
+  @@unique([studentId, lectureId])
+  @@index([lectureId])
+  @@map("lecture_progress")
+}
+
+// ============================================================
+// Assignments, submissions, grading
+// ============================================================
+
+model Assignment {
+  id           String    @id @default(cuid())
+  courseId     String
+  course       Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sectionId    String?
+  section      Section?  @relation(fields: [sectionId], references: [id])
+  title        String
+  instructions String
+  // Rubric shown to students and used to anchor AI-drafted feedback (Week 11).
+  rubric       String?
+  dueAt        DateTime?
+  maxPoints    Int       @default(100)
+  allowLate    Boolean   @default(true)
+  maxAttempts  Int       @default(1)
+  isPublished  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  submissions Submission[]
+
+  @@index([courseId])
+  @@index([sectionId])
+  @@map("assignments")
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  GRADED
+  RETURNED
+}
+
+model Submission {
+  id            String           @id @default(cuid())
+  assignmentId  String
+  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attemptNumber Int              @default(1)
+  textContent   String?
+  fileKey       String?
+  isLate        Boolean          @default(false)
+  status        SubmissionStatus @default(SUBMITTED)
+  submittedAt   DateTime         @default(now())
+
+  grades   Grade[]
+  aiReview AiReview?
+
+  @@unique([assignmentId, studentId, attemptNumber])
+  @@index([studentId])
+  @@map("submissions")
+}
+
+model Grade {
+  id           String     @id @default(cuid())
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  graderId     String
+  grader       User       @relation("Grader", fields: [graderId], references: [id])
+  points       Int
+  feedback     String?
+  gradedAt     DateTime   @default(now())
+
+  // Separate table so regrades keep history; current grade = latest row.
+  @@index([submissionId])
+  @@map("grades")
+}
+
+enum AiReviewAction {
+  PENDING
+  ACCEPTED
+  EDITED
+  REJECTED
+}
+
+model AiReview {
+  id               String         @id @default(cuid())
+  submissionId     String         @unique
+  submission       Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  draftFeedback    String
+  suggestedScore   Int?
+  model            String
+  promptTokens     Int?
+  completionTokens Int?
+  // Powers the instructor-agreement metric. The AI never grades autonomously.
+  instructorAction AiReviewAction @default(PENDING)
+  createdAt        DateTime       @default(now())
+
+  @@map("ai_reviews")
+}
+
+// ============================================================
+// Async processing & notifications
+// ============================================================
+
+model JobEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String    @unique
+  type        String
+  payload     Json
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  // Idempotent event processing: retried webhooks/jobs dedupe on eventId.
+  @@map("job_events")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
