@@ -2,8 +2,6 @@
 
 A learning management platform — video lectures, assignments with feedback, and role-based courses for students, instructors, and admins. Built as a final-year engineering project with an explicit focus on production-grade practices: real deployment, CI, tests, measured performance, and documented architecture decisions.
 
-
-
 ## Stack
 
 | Layer               | Technology                                                        |
