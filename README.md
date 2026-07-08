@@ -26,7 +26,13 @@ Copy `.env.example` to `.env` first (defaults match `docker-compose.yml`).
 
 ### Demo data
 
-`pnpm db:seed` creates an admin, an instructor, three students, a published course with sections/lectures/an assignment, and enrollments. Login credentials arrive with Better Auth in Week 2.
+`pnpm db:seed` creates the accounts below (all with password `Demo@1234`), a published course with sections/lectures/an assignment, and enrollments.
+
+| Role       | Email                                     |
+| ---------- | ----------------------------------------- |
+| Admin      | `admin@demo.lms`                          |
+| Instructor | `instructor@demo.lms`                     |
+| Student    | `student1@demo.lms` … `student3@demo.lms` |
 
 ### Scripts
 

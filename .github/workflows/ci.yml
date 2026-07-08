@@ -10,9 +10,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Dummy URL: satisfies boot-time env validation. Nothing connects during
+  # Dummy values: satisfy boot-time env validation. Nothing connects during
   # lint/typecheck/test/build — the homepage is force-dynamic.
   DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+  BETTER_AUTH_SECRET: ci-only-dummy-secret-0000000000000000
 
 jobs:
   lint:

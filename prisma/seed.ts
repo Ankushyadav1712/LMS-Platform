@@ -1,21 +1,40 @@
 import "dotenv/config";
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { hashPassword } from "better-auth/crypto";
 
 import { PrismaClient } from "../src/generated/prisma/client";
 
 // Idempotent seed: every write is an upsert keyed on a unique constraint, so
 // `pnpm db:seed` can run repeatedly (demo resets, CI, fresh clones).
-//
-// NOTE: users are seeded without credentials. Better Auth (Week 2) owns
-// password hashing; demo passwords get attached to these accounts then.
 
 const db = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
 });
 
+const DEMO_PASSWORD = "Demo@1234";
+
+// Better Auth stores credential hashes on Account (providerId "credential"),
+// hashed with its own scrypt implementation — so seeded logins work exactly
+// like real signups.
+async function ensureCredential(userId: string) {
+  const existing = await db.account.findFirst({
+    where: { userId, providerId: "credential" },
+  });
+  if (!existing) {
+    await db.account.create({
+      data: {
+        userId,
+        providerId: "credential",
+        accountId: userId,
+        password: await hashPassword(DEMO_PASSWORD),
+      },
+    });
+  }
+}
+
 async function main() {
-  await db.user.upsert({
+  const admin = await db.user.upsert({
     where: { email: "admin@demo.lms" },
     update: { role: "ADMIN" },
     create: { name: "Asha Verma", email: "admin@demo.lms", role: "ADMIN", emailVerified: true },
@@ -41,6 +60,10 @@ async function main() {
         create: { name, email: `student${i + 1}@demo.lms`, role: "STUDENT", emailVerified: true },
       }),
     );
+  }
+
+  for (const user of [admin, instructor, ...students]) {
+    await ensureCredential(user.id);
   }
 
   const webDev = await db.category.upsert({
@@ -184,6 +207,8 @@ async function main() {
     enrollments: await db.enrollment.count(),
   };
   console.log("Seed complete:", counts);
+  console.log(`Demo accounts (password: ${DEMO_PASSWORD}):`);
+  console.log("  admin@demo.lms · instructor@demo.lms · student1..3@demo.lms");
 }
 
 main()
