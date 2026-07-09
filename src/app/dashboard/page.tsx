@@ -2,8 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { SignOutButton } from "@/components/sign-out-button";
+import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { can } from "@/lib/authz";
+import { toActor } from "@/lib/guards";
 import { getSession } from "@/lib/session";
 
 // The real auth boundary: proxy.ts only checks cookie presence.
@@ -12,15 +15,23 @@ export default async function DashboardPage() {
   if (!session) redirect("/login?next=/dashboard");
 
   const { user } = session;
+  const actor = toActor(user);
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-      <header className="mb-12 flex items-center justify-between">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          LMS Platform
-        </Link>
+      <SiteHeader>
+        {can.createCourse(actor) ? (
+          <Link href="/teach" className="text-sm text-muted-foreground hover:text-foreground">
+            Teach
+          </Link>
+        ) : null}
+        {can.administrate(actor) ? (
+          <Link href="/admin" className="text-sm text-muted-foreground hover:text-foreground">
+            Admin
+          </Link>
+        ) : null}
         <SignOutButton />
-      </header>
+      </SiteHeader>
 
       <Card>
         <CardHeader>
@@ -32,7 +43,7 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           Signed in with a database-backed session that expires{" "}
-          {session.session.expiresAt.toLocaleDateString()}. Role-specific dashboards land in Week 3.
+          {session.session.expiresAt.toLocaleDateString()}. Enrollments and progress land in Week 5.
         </CardContent>
       </Card>
     </div>
