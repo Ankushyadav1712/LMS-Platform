@@ -13,6 +13,7 @@ import { getCourseOutline, getReadableLecture } from "@/lib/learn";
 import { getSession } from "@/lib/session";
 
 import { MarkComplete } from "./mark-complete";
+import { VideoPlayer } from "./video-player";
 
 export default async function LectureReaderPage({
   params,
@@ -34,11 +35,13 @@ export default async function LectureReaderPage({
 
   const course = await db.course.findUnique({
     where: { id: courseId },
-    select: { slug: true, title: true },
+    select: { slug: true, title: true, instructorId: true },
   });
   if (!course || course.slug !== slug) notFound();
+  // Owners (and admins) read their own course without an enrollment.
+  const isOwner = actor ? actor.id === course.instructorId || actor.role === "ADMIN" : false;
   // Locked content: back to the course page, where the enroll button lives.
-  if (!canRead) redirect(`/courses/${slug}`);
+  if (!canRead && !isOwner) redirect(`/courses/${slug}`);
 
   const outline = await getCourseOutline(courseId);
   const flat = outline.flatMap((s) => s.lectures.map((l) => ({ ...l, section: s })));
@@ -53,7 +56,8 @@ export default async function LectureReaderPage({
       })
     : null;
 
-  const accessible = (l: { isFreePreview: boolean }) => Boolean(enrollment) || l.isFreePreview;
+  const accessible = (l: { isFreePreview: boolean }) =>
+    Boolean(enrollment) || isOwner || l.isFreePreview;
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-12">
@@ -90,11 +94,13 @@ export default async function LectureReaderPage({
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
+                        {l.type === "VIDEO" ? "▶ " : ""}
                         {l.title}
                       </Link>
                     ) : (
                       <span className="block px-2 py-1 text-sm text-muted-foreground/60">
-                        🔒 {l.title}
+                        🔒 {l.type === "VIDEO" ? "▶ " : ""}
+                        {l.title}
                       </span>
                     )}
                   </li>
@@ -112,9 +118,16 @@ export default async function LectureReaderPage({
             ) : null}
           </div>
 
+          {lecture.type === "VIDEO" ? (
+            <div className="mb-8">
+              <VideoPlayer lectureId={lecture.id} enrolled={Boolean(enrollment)} />
+            </div>
+          ) : null}
+
           <div className="prose prose-neutral max-w-none dark:prose-invert">
             <Markdown remarkPlugins={[remarkGfm]}>
-              {lecture.body ?? "*This lecture has no content yet.*"}
+              {lecture.body ??
+                (lecture.type === "VIDEO" ? "" : "*This lecture has no content yet.*")}
             </Markdown>
           </div>
 
