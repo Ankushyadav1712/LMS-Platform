@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -64,6 +65,27 @@ export async function presignDownload(key: string): Promise<string> {
   if (downloadCache.size > 500) downloadCache.clear();
   downloadCache.set(key, { url, staleAtMs: Date.now() + (DOWNLOAD_TTL_SECONDS - 300) * 1000 });
   return url;
+}
+
+/**
+ * Playback URLs are minted per request with a long TTL (a lecture must
+ * survive a full watch session) and deliberately skip the download memo —
+ * a memoized URL could be near expiry when handed out.
+ */
+export async function presignVideoPlayback(key: string): Promise<string> {
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key }), {
+    expiresIn: 4 * 3600,
+  });
+}
+
+/** Does the object actually exist? Confirm endpoints never trust the client. */
+export async function objectExists(key: string): Promise<boolean> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Best-effort delete for superseded objects (old thumbnails on replace). */

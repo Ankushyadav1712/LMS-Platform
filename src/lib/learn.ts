@@ -117,7 +117,7 @@ export async function getCourseOutline(courseId: string) {
       lectures: {
         where: { isPublished: true },
         orderBy: { position: "asc" },
-        select: { id: true, title: true, position: true, isFreePreview: true },
+        select: { id: true, title: true, position: true, isFreePreview: true, type: true },
       },
     },
   });

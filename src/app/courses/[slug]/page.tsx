@@ -114,11 +114,15 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
                             href={`/courses/${course.slug}/lectures/${lecture.id}`}
                             className="text-foreground underline-offset-4 hover:underline"
                           >
-                            {section.position}.{lecture.position} {lecture.title}
+                            {section.position}.{lecture.position}{" "}
+                            {lecture.type === "VIDEO" ? "▶ " : ""}
+                            {lecture.title}
                           </Link>
                         ) : (
                           <span className="text-muted-foreground">
-                            {section.position}.{lecture.position} {lecture.title}
+                            {section.position}.{lecture.position}{" "}
+                            {lecture.type === "VIDEO" ? "▶ " : ""}
+                            {lecture.title}
                           </span>
                         )}
                         {lecture.isFreePreview && !enrollment ? (
