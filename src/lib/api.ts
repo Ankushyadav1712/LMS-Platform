@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ForbiddenError, NotFoundError, UnauthorizedError } from "@/lib/authz";
+import { DomainError, ForbiddenError, NotFoundError, UnauthorizedError } from "@/lib/authz";
 
 type KnownError = UnauthorizedError | ForbiddenError | NotFoundError;
 
@@ -11,8 +11,14 @@ function isKnownError(e: unknown): e is KnownError {
   );
 }
 
-/** Uniform error envelope: { error: { code, message } }. */
+/** Uniform error envelope: { error: { code, message, ...details } }. */
 export function errorResponse(e: unknown): NextResponse {
+  if (e instanceof DomainError) {
+    return NextResponse.json(
+      { error: { code: e.code, message: e.message, ...(e.details ?? {}) } },
+      { status: e.status },
+    );
+  }
   if (isKnownError(e)) {
     return NextResponse.json({ error: { code: e.code, message: e.message } }, { status: e.status });
   }

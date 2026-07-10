@@ -14,6 +14,11 @@ env:
   # lint/typecheck/test/build — the homepage is force-dynamic.
   DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
   BETTER_AUTH_SECRET: ci-only-dummy-secret-0000000000000000
+  S3_ENDPOINT: http://localhost:9000
+  S3_ACCESS_KEY_ID: ci
+  S3_SECRET_ACCESS_KEY: ci
+  S3_BUCKET: ci
+  S3_REGION: auto
 
 jobs:
   lint:

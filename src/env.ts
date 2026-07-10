@@ -12,12 +12,12 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
     // Object storage (MinIO locally, Cloudflare R2 in production).
-    // Optional until the upload flows land in Week 4, then flip to required.
-    S3_ENDPOINT: z.url().optional(),
-    S3_ACCESS_KEY_ID: z.string().optional(),
-    S3_SECRET_ACCESS_KEY: z.string().optional(),
-    S3_BUCKET: z.string().optional(),
-    S3_REGION: z.string().optional(),
+    // Required since Week 4 — thumbnails/attachments upload via presigned URLs.
+    S3_ENDPOINT: z.url(),
+    S3_ACCESS_KEY_ID: z.string().min(1),
+    S3_SECRET_ACCESS_KEY: z.string().min(1),
+    S3_BUCKET: z.string().min(1),
+    S3_REGION: z.string().min(1),
   },
   client: {},
   runtimeEnv: {

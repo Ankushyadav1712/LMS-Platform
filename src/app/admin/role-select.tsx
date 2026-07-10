@@ -1,8 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-
 import {
   Select,
   SelectContent,
@@ -10,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useApiAction } from "@/lib/use-api-action";
 
 const ROLES = ["STUDENT", "INSTRUCTOR", "ADMIN"] as const;
 
@@ -22,33 +20,17 @@ export function RoleSelect({
   role: string;
   disabled?: boolean;
 }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { pending, error, run } = useApiAction();
 
   function changeRole(nextRole: string) {
     if (nextRole === role) return;
-    // Async transition (React 19): pending covers the whole mutation, so the
-    // select stays disabled from PATCH start through refresh — no racing a
-    // second role change while one is in flight.
-    startTransition(async () => {
-      setError(null);
-      try {
-        const res = await fetch(`/api/v1/admin/users/${userId}/role`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: nextRole }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          setError(body?.error?.message ?? "Failed to update role");
-          return;
-        }
-        router.refresh();
-      } catch {
-        setError("Network error — role was not updated");
-      }
-    });
+    run(() =>
+      fetch(`/api/v1/admin/users/${userId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      }),
+    );
   }
 
   return (

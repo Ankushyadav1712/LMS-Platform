@@ -32,6 +32,22 @@ export class NotFoundError extends Error {
   }
 }
 
+/**
+ * Domain-rule violation with a machine-readable code (e.g. NOT_READY,
+ * ARCHIVED). `details` is spread into the error envelope so clients can
+ * read structured fields like `blockers`.
+ */
+export class DomainError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details?: Record<string, unknown>,
+    readonly status: number = 400,
+  ) {
+    super(message);
+  }
+}
+
 // ---------------------------------------------------------------
 // Policy layer. Pure functions over (user, resource) — no DB, no
 // framework — so the whole role × ownership matrix is unit-testable.
