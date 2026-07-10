@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/db";
+import { presignDownload } from "@/lib/s3";
 import { getSession } from "@/lib/session";
 
 // Rendered per-request: the catalog reads live data and must not be
@@ -22,7 +23,13 @@ async function getCatalog() {
         _count: { select: { enrollments: true } },
       },
     });
-    return { courses, dbDown: false as const };
+    const withThumbnails = await Promise.all(
+      courses.map(async (course) => ({
+        ...course,
+        thumbnailUrl: course.thumbnailKey ? await presignDownload(course.thumbnailKey) : null,
+      })),
+    );
+    return { courses: withThumbnails, dbDown: false as const };
   } catch {
     return { courses: [], dbDown: true as const };
   }
@@ -88,7 +95,19 @@ export default async function Home() {
             {courses.map((course) => {
               const lectureCount = course.sections.reduce((sum, s) => sum + s._count.lectures, 0);
               return (
-                <Card key={course.id}>
+                <Card key={course.id} className="overflow-hidden pt-0">
+                  {course.thumbnailUrl ? (
+                    // Presigned URL changes every render — plain <img> avoids
+                    // image-optimizer cache churn.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={course.thumbnailUrl}
+                      alt=""
+                      className="aspect-video w-full object-cover"
+                    />
+                  ) : (
+                    <div className="aspect-video w-full bg-muted" />
+                  )}
                   <CardHeader>
                     <div className="flex items-center gap-2">
                       {course.category ? (
