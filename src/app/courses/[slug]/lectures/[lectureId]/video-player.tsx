@@ -6,6 +6,7 @@ const HEARTBEAT_SECONDS = 10;
 const COMPLETE_AT = 0.9;
 
 type Playback = {
+  kind: "hls" | "mp4";
   url: string;
   resumeAt: number;
   durationSeconds: number | null;
@@ -35,6 +36,35 @@ export function VideoPlayer({ lectureId, enrolled }: { lectureId: string; enroll
       cancelled = true;
     };
   }, [lectureId]);
+
+  // Attach the source: MP4 directly; HLS natively where supported (Safari),
+  // otherwise through hls.js for adaptive bitrate switching.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !playback) return;
+
+    if (playback.kind === "mp4" || video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = playback.url;
+      return;
+    }
+
+    let hls: { destroy: () => void } | null = null;
+    let cancelled = false;
+    void import("hls.js").then(({ default: Hls }) => {
+      if (cancelled || !Hls.isSupported()) return;
+      const instance = new Hls();
+      instance.loadSource(playback.url);
+      instance.attachMedia(video);
+      instance.on(Hls.Events.ERROR, (_evt, data) => {
+        if (data.fatal) setError("Playback error — try reloading the page");
+      });
+      hls = instance;
+    });
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+  }, [playback]);
 
   // Resume where the student left off — unless they had nearly finished.
   function onLoadedMetadata() {
@@ -102,7 +132,6 @@ export function VideoPlayer({ lectureId, enrolled }: { lectureId: string; enroll
   return (
     <video
       ref={videoRef}
-      src={playback.url}
       controls
       playsInline
       className="aspect-video w-full rounded-xl border bg-black"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,23 @@ export function VideoUpload({
   const [error, setError] = useState<string | null>(null);
 
   const hasVideo = videoStatus === "READY";
+  const processing = videoStatus === "PROCESSING";
+  const failed = videoStatus === "ERRORED";
+
+  // While the worker transcodes, poll until the status flips.
+  useEffect(() => {
+    if (!processing) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/lectures/${lectureId}/video/status`);
+        const body = await res.json().catch(() => null);
+        if (res.ok && body?.videoStatus !== "PROCESSING") router.refresh();
+      } catch {
+        // transient poll failures are fine — next tick retries
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [processing, lectureId, router]);
 
   async function onFileChosen(file: File | undefined) {
     if (!file) return;
@@ -120,6 +137,14 @@ export function VideoUpload({
           </div>
         ) : phase === "confirming" ? (
           <p className="text-sm text-muted-foreground">Finalizing…</p>
+        ) : processing ? (
+          <p className="text-sm text-muted-foreground">
+            Transcoding to adaptive HLS… this page updates automatically.
+          </p>
+        ) : failed ? (
+          <p className="text-sm text-destructive">
+            Transcoding failed — try uploading the file again.
+          </p>
         ) : null}
         <input
           ref={inputRef}
@@ -131,10 +156,10 @@ export function VideoUpload({
         <Button
           variant="outline"
           className="w-full"
-          disabled={phase !== "idle"}
+          disabled={phase !== "idle" || processing}
           onClick={() => inputRef.current?.click()}
         >
-          {hasVideo ? "Replace video" : "Upload video"}
+          {hasVideo || failed ? "Replace video" : "Upload video"}
         </Button>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
       </CardContent>

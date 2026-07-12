@@ -78,6 +78,14 @@ export async function presignVideoPlayback(key: string): Promise<string> {
   });
 }
 
+/** Small text objects only (HLS playlists) — never use for media bytes. */
+export async function getObjectText(key: string): Promise<string> {
+  const obj = await s3.send(new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
+  const text = await obj.Body?.transformToString();
+  if (text === undefined) throw new Error(`Empty object at ${key}`);
+  return text;
+}
+
 /** Does the object actually exist? Confirm endpoints never trust the client. */
 export async function objectExists(key: string): Promise<boolean> {
   try {
