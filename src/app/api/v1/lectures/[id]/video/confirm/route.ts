@@ -6,6 +6,7 @@ import { DomainError } from "@/lib/authz";
 import { getOwnedLecture } from "@/lib/courses";
 import { db } from "@/lib/db";
 import { requireActor } from "@/lib/guards";
+import { enqueueTranscode } from "@/lib/queue";
 import { deleteObject, objectExists } from "@/lib/s3";
 
 const bodySchema = z.object({
@@ -48,14 +49,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       data: {
         type: "VIDEO",
         videoKey: key,
-        // The boring pipeline: raw MP4 is served as-is, so it is READY the
-        // moment it exists. Weeks 7-8 insert PROCESSING + transcoding here.
-        videoStatus: "READY",
+        // The async pipeline: the worker transcodes to an HLS ladder and
+        // flips this to READY. An existing build keeps playing meanwhile.
+        videoStatus: "PROCESSING",
         durationSeconds: durationSeconds ?? lecture.durationSeconds,
       },
     });
 
-    // Replacing a video orphans the old object — clean it up.
+    await enqueueTranscode({ lectureId: lecture.id, rawKey: key });
+
+    // Replacing a video orphans the old raw object — clean it up. (The old
+    // HLS build is cleaned by the worker once the new one goes live.)
     if (lecture.videoKey && lecture.videoKey !== key) {
       await deleteObject(lecture.videoKey);
     }
