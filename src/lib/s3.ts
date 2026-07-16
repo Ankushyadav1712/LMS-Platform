@@ -68,14 +68,24 @@ export async function presignDownload(key: string): Promise<string> {
 }
 
 /**
- * Playback URLs are minted per request with a long TTL (a lecture must
- * survive a full watch session) and deliberately skip the download memo —
- * a memoized URL could be near expiry when handed out.
+ * Playback URLs are minted per request (no memo — a memoized URL could be
+ * near expiry when handed out). TTL should cover the remaining watch
+ * session: hls.js loads a VOD playlist once and never refetches it, so
+ * callers size the TTL from the lecture duration. These are bearer URLs —
+ * revocation SLA equals the TTL; access control, not DRM.
  */
-export async function presignVideoPlayback(key: string): Promise<string> {
+export async function presignVideoPlayback(
+  key: string,
+  expiresInSeconds = 4 * 3600,
+): Promise<string> {
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key }), {
-    expiresIn: 4 * 3600,
+    expiresIn: expiresInSeconds,
   });
+}
+
+/** TTL sized to the watch session: duration + slack, clamped to [1h, 4h]. */
+export function playbackTtlSeconds(durationSeconds: number | null): number {
+  return Math.min(Math.max((durationSeconds ?? 0) + 1800, 3600), 4 * 3600);
 }
 
 /** Small text objects only (HLS playlists) — never use for media bytes. */

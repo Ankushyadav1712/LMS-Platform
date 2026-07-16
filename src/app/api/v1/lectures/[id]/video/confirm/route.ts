@@ -31,8 +31,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const lecture = await getOwnedLecture(actor, id);
     const { key, durationSeconds } = await parseBody(request, bodySchema);
 
+    // Full key-shape check, not just the prefix: raw uploads are exactly
+    // {prefix}{cuid}.{mp4|webm} — a nested path (e.g. an HLS build artifact
+    // under .../hls/...) can never be confirmed as a source video.
     const prefix = `videos/${lecture.section.courseId}/${lecture.id}/`;
-    if (!key.startsWith(prefix)) {
+    const rawShape = new RegExp(`^${prefix}[a-z0-9]+\\.(mp4|webm)$`);
+    if (!rawShape.test(key)) {
       throw new DomainError("INVALID_KEY", "Key does not belong to this lecture");
     }
     if (!(await objectExists(key))) {
@@ -56,7 +60,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
     });
 
-    await enqueueTranscode({ lectureId: lecture.id, rawKey: key });
+    try {
+      await enqueueTranscode({ lectureId: lecture.id, rawKey: key });
+    } catch (enqueueError) {
+      // PROCESSING with no job = stuck forever. Roll the status to ERRORED
+      // (staleness-guarded) and tell the client the truth.
+      console.error("enqueue failed:", enqueueError);
+      await db.lecture.updateMany({
+        where: { id: lecture.id, videoKey: key, videoStatus: "PROCESSING" },
+        data: { videoStatus: "ERRORED" },
+      });
+      throw new DomainError(
+        "QUEUE_UNAVAILABLE",
+        "Video processing is unavailable right now — try again shortly",
+        undefined,
+        503,
+      );
+    }
 
     // Replacing a video orphans the old raw object — clean it up. (The old
     // HLS build is cleaned by the worker once the new one goes live.)

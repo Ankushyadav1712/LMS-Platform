@@ -5,7 +5,13 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PgBoss, type Job } from "pg-boss";
 
 import { PrismaClient } from "../src/generated/prisma/client";
-import { transcode, type TranscodeDeps, type TranscodeJobData } from "./transcode";
+import {
+  TRANSCODE_DLQ,
+  TRANSCODE_QUEUE,
+  TRANSCODE_QUEUE_OPTIONS,
+  type TranscodeJob as TranscodeJobData,
+} from "../src/lib/queue-config";
+import { transcode, type TranscodeDeps } from "./transcode";
 
 // Self-contained process: own DB pool, own S3 client, plain process.env —
 // deploys independently of the Next.js app (Railway service in production).
@@ -18,9 +24,6 @@ function requireEnv(name: string): string {
   }
   return value;
 }
-
-const TRANSCODE_QUEUE = "transcode-video";
-const TRANSCODE_DLQ = "transcode-video-dlq";
 
 async function main() {
   const db = new PrismaClient({
@@ -41,28 +44,26 @@ async function main() {
   boss.on("error", (e: Error) => console.error("pg-boss error:", e));
   await boss.start();
   await boss.createQueue(TRANSCODE_DLQ);
-  await boss.createQueue(TRANSCODE_QUEUE, {
-    retryLimit: 2,
-    retryDelay: 30,
-    retryBackoff: true,
-    deadLetter: TRANSCODE_DLQ,
-  });
+  await boss.createQueue(TRANSCODE_QUEUE, TRANSCODE_QUEUE_OPTIONS);
 
-  // Transcoding is CPU-bound: one job at a time per worker process.
+  // Transcoding is CPU-bound: one job at a time per worker process. Each
+  // job's AbortSignal (pg-boss provides one) kills the running ffmpeg on
+  // shutdown/expiration so nothing is orphaned mid-encode.
   await boss.work<TranscodeJobData>(
     TRANSCODE_QUEUE,
     { batchSize: 1, pollingIntervalSeconds: 2 },
     async (jobs: Job<TranscodeJobData>[]) => {
       for (const job of jobs) {
         console.log(`[transcode] start ${job.id} lecture=${job.data.lectureId}`);
-        const result = await transcode(deps, job.data); // throw = retry
+        const result = await transcode(deps, job.data, job.signal); // throw = retry
         console.log(`[transcode] done ${job.id}: ${result}`);
       }
     },
   );
 
   // Retries exhausted → dead letter → the lecture is marked ERRORED so the
-  // instructor sees a real status instead of an eternal spinner.
+  // instructor sees a real status instead of an eternal spinner. Guarded on
+  // PROCESSING: never clobber a lecture some other run already flipped.
   await boss.work<TranscodeJobData>(
     TRANSCODE_DLQ,
     { batchSize: 1 },
@@ -70,7 +71,11 @@ async function main() {
       for (const job of jobs) {
         console.error(`[transcode] dead-lettered lecture=${job.data.lectureId}`);
         await db.lecture.updateMany({
-          where: { id: job.data.lectureId, videoKey: job.data.rawKey },
+          where: {
+            id: job.data.lectureId,
+            videoKey: job.data.rawKey,
+            videoStatus: "PROCESSING",
+          },
           data: { videoStatus: "ERRORED" },
         });
       }

@@ -22,8 +22,15 @@ describe("pickRenditions", () => {
     expect(pickRenditions(2160).map((r) => r.name)).toEqual(["360p", "720p", "1080p"]);
   });
 
-  it("gives tiny sources at least one rung", () => {
-    expect(pickRenditions(240).map((r) => r.name)).toEqual(["360p"]);
+  it("gives tiny sources one rung at their own height — no upscaling", () => {
+    const rungs = pickRenditions(240);
+    expect(rungs).toHaveLength(1);
+    expect(rungs[0].name).toBe("360p");
+    expect(rungs[0].height).toBe(240);
+  });
+
+  it("clamps odd tiny heights to even for the encoder", () => {
+    expect(pickRenditions(241)[0].height).toBe(240);
   });
 });
 

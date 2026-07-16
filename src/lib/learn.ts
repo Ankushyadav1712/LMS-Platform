@@ -28,9 +28,13 @@ export async function getPublishedCourseBySlug(slug: string) {
   });
 }
 
+/**
+ * The effective enrollment for access decisions: DROPPED means revoked, so
+ * it never grants access; COMPLETED students keep re-watch rights.
+ */
 export async function getEnrollment(studentId: string, courseId: string) {
-  return db.enrollment.findUnique({
-    where: { studentId_courseId: { studentId, courseId } },
+  return db.enrollment.findFirst({
+    where: { studentId, courseId, status: { not: "DROPPED" } },
   });
 }
 
