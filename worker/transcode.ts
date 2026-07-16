@@ -23,9 +23,14 @@ const CONTENT_TYPES: Record<string, string> = {
   ".ts": "video/mp2t",
 };
 
-function run(cmd: string, args: string[]): Promise<string> {
+function run(cmd: string, args: string[], signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error(`${cmd} aborted before start`));
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    // Job aborted (shutdown or expiration): kill ffmpeg so nothing encodes
+    // on as an orphan; the temp dir is cleaned by transcode's finally.
+    const onAbort = () => child.kill("SIGKILL");
+    signal?.addEventListener("abort", onAbort, { once: true });
     let out = "";
     let errTail = "";
     child.stdout.on("data", (d) => (out += d));
@@ -33,28 +38,36 @@ function run(cmd: string, args: string[]): Promise<string> {
       errTail = (errTail + d.toString()).slice(-2000); // keep the useful tail
     });
     child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0
-        ? resolve(out)
-        : reject(new Error(`${cmd} exited with ${code}: …${errTail.slice(-500)}`)),
-    );
+    child.on("close", (code) => {
+      signal?.removeEventListener("abort", onAbort);
+      if (code === 0) resolve(out);
+      else if (signal?.aborted) reject(new Error(`${cmd} aborted mid-run`));
+      else reject(new Error(`${cmd} exited with ${code}: …${errTail.slice(-500)}`));
+    });
   });
 }
 
-async function probe(inputPath: string): Promise<{ height: number; durationSeconds: number }> {
-  const json = await run("ffprobe", [
-    "-v",
-    "error",
-    "-select_streams",
-    "v:0",
-    "-show_entries",
-    "stream=height",
-    "-show_entries",
-    "format=duration",
-    "-of",
-    "json",
-    inputPath,
-  ]);
+async function probe(
+  inputPath: string,
+  signal?: AbortSignal,
+): Promise<{ height: number; durationSeconds: number }> {
+  const json = await run(
+    "ffprobe",
+    [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=height",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "json",
+      inputPath,
+    ],
+    signal,
+  );
   const parsed = JSON.parse(json) as {
     streams?: { height?: number }[];
     format?: { duration?: string };
@@ -86,7 +99,11 @@ export type TranscodeJobData = { lectureId: string; rawKey: string };
  * lecture to READY. Idempotent and staleness-safe: if the lecture's raw key
  * changed while we worked (video replaced), the result is discarded.
  */
-export async function transcode(deps: TranscodeDeps, job: TranscodeJobData): Promise<string> {
+export async function transcode(
+  deps: TranscodeDeps,
+  job: TranscodeJobData,
+  signal?: AbortSignal,
+): Promise<string> {
   const { db, s3, bucket } = deps;
 
   const lecture = await db.lecture.findUnique({
@@ -105,7 +122,7 @@ export async function transcode(deps: TranscodeDeps, job: TranscodeJobData): Pro
     await pipeline(obj.Body as Readable, createWriteStream(inputPath));
 
     // 2. Probe → pick the ladder (never upscale).
-    const { height, durationSeconds } = await probe(inputPath);
+    const { height, durationSeconds } = await probe(inputPath, signal);
     const renditions = pickRenditions(height);
 
     // 3. Encode each rung, keyframe-aligned so quality switches are seamless.
@@ -113,7 +130,7 @@ export async function transcode(deps: TranscodeDeps, job: TranscodeJobData): Pro
     for (const rendition of renditions) {
       const renditionDir = path.join(outDir, rendition.name);
       await mkdir(renditionDir, { recursive: true });
-      await run("ffmpeg", ffmpegArgs({ inputPath, outDir: renditionDir, rendition }));
+      await run("ffmpeg", ffmpegArgs({ inputPath, outDir: renditionDir, rendition }), signal);
     }
     await writeFile(path.join(outDir, "master.m3u8"), buildMasterPlaylist(renditions));
 

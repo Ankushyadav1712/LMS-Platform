@@ -1,10 +1,12 @@
 import { can, NotFoundError, type Actor } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { getEnrollment } from "@/lib/learn";
 
 /**
  * The one playback gate, shared by the playback endpoint and the HLS
  * playlist proxies: session ✓ (caller), published chain ✓ (unless owner),
- * enrollment or free-preview or ownership ✓. 404-masked otherwise.
+ * effective enrollment (not DROPPED) or free-preview or ownership ✓.
+ * 404-masked otherwise.
  */
 export async function getPlayableLecture(actor: Actor, lectureId: string) {
   const lecture = await db.lecture.findUnique({
@@ -20,9 +22,7 @@ export async function getPlayableLecture(actor: Actor, lectureId: string) {
   if (!isOwner && !published) throw new NotFoundError("Lecture not found");
 
   if (!isOwner && !lecture.isFreePreview) {
-    const enrollment = await db.enrollment.findUnique({
-      where: { studentId_courseId: { studentId: actor.id, courseId: course.id } },
-    });
+    const enrollment = await getEnrollment(actor.id, course.id);
     if (!enrollment) throw new NotFoundError("Lecture not found");
   }
 
@@ -30,16 +30,12 @@ export async function getPlayableLecture(actor: Actor, lectureId: string) {
 }
 
 /**
- * Playable HLS build if one exists — including the previous build while a
- * replacement transcodes (students keep watching during re-processing).
+ * The playable HLS build, independent of transcode state: playbackKey is
+ * only ever written by the worker after a COMPLETE build, so if it exists
+ * it points at whole, servable content — the last good build keeps playing
+ * through a replacement's PROCESSING and even a failed replacement
+ * (ERRORED), which only means the *new* upload didn't make it.
  */
-export function playableHlsKey(lecture: {
-  playbackKey: string | null;
-  videoStatus: string;
-}): string | null {
-  if (!lecture.playbackKey) return null;
-  if (lecture.videoStatus === "READY" || lecture.videoStatus === "PROCESSING") {
-    return lecture.playbackKey;
-  }
-  return null;
+export function playableHlsKey(lecture: { playbackKey: string | null }): string | null {
+  return lecture.playbackKey;
 }

@@ -16,13 +16,15 @@ const LADDER: Rendition[] = [
 ];
 
 /**
- * Never upscale: only rungs at or below the source height, but always at
- * least the smallest rung (a 240p source still gets a 360p-named encode of
- * its own size class).
+ * Never upscale: only rungs at or below the source height. Sources smaller
+ * than the lowest rung get a single encode at their own height (the rung
+ * keeps its ladder name; only the encode size shrinks).
  */
 export function pickRenditions(sourceHeight: number): Rendition[] {
   const fitting = LADDER.filter((r) => r.height <= sourceHeight);
-  return fitting.length > 0 ? fitting : [LADDER[0]];
+  if (fitting.length > 0) return fitting;
+  const evenHeight = Math.max(2, Math.floor(sourceHeight / 2) * 2);
+  return [{ ...LADDER[0], height: evenHeight }];
 }
 
 /**
