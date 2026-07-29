@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { SaveFooter } from "@/components/save-footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -92,16 +92,7 @@ export function CourseDetailsForm({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save details"}
-            </Button>
-            {error ? (
-              <p className="text-sm text-destructive">{error}</p>
-            ) : saved ? (
-              <p className="text-sm text-muted-foreground">Saved</p>
-            ) : null}
-          </div>
+          <SaveFooter pending={pending} error={error} saved={saved} label="Save details" />
         </form>
       </CardContent>
     </Card>
