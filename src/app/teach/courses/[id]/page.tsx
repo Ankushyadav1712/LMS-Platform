@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requirePageRole } from "@/lib/guards";
 import { presignDownload } from "@/lib/s3";
 
+import { AssignmentsList } from "./assignments-list";
 import { CourseDetailsForm } from "./course-details-form";
 import { Curriculum } from "./curriculum";
 import { PublishCard } from "./publish-card";
@@ -21,6 +22,10 @@ export default async function CourseEditorPage({ params }: { params: Promise<{ i
       sections: {
         orderBy: { position: "asc" },
         include: { lectures: { orderBy: { position: "asc" } } },
+      },
+      assignments: {
+        orderBy: { createdAt: "asc" },
+        include: { _count: { select: { submissions: true } } },
       },
     },
   });
@@ -51,6 +56,7 @@ export default async function CourseEditorPage({ params }: { params: Promise<{ i
             categories={categories}
           />
           <Curriculum courseId={course.id} sections={course.sections} />
+          <AssignmentsList courseId={course.id} assignments={course.assignments} />
         </div>
         <div className="space-y-8">
           <PublishCard courseId={course.id} status={course.status} />

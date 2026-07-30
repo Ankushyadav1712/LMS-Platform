@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { LocalDateTime } from "@/components/local-datetime";
 import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { db } from "@/lib/db";
 import { toActor } from "@/lib/guards";
 import { getCourseProgress, getEnrollment, getPublishedCourseBySlug } from "@/lib/learn";
 import { presignDownload } from "@/lib/s3";
@@ -25,6 +27,16 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
 
   const lectures = course.sections.flatMap((s) => s.lectures);
   const isOwner = actor?.id === course.instructor.id;
+
+  // Assignments are visible to enrolled students (and the owner) only.
+  const assignments =
+    enrollment || isOwner
+      ? await db.assignment.findMany({
+          where: { courseId: course.id, isPublished: true },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, title: true, dueAt: true, maxPoints: true },
+        })
+      : [];
   const firstLectureId = lectures[0]?.id;
   const canEnroll = !enrollment && !isOwner && (!actor || actor.role === "STUDENT");
 
@@ -141,6 +153,40 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ s
           </CardContent>
         </Card>
       </section>
+
+      {assignments.length > 0 ? (
+        <section className="mt-10">
+          <h2 className="mb-4 text-xl font-medium">Assignments</h2>
+          <Card>
+            <CardContent className="divide-y p-0">
+              {assignments.map((a) => (
+                <Link
+                  key={a.id}
+                  // Owners have no enrollment, so the student submission page
+                  // 404s for them — send them to the instructor view instead.
+                  href={
+                    isOwner
+                      ? `/teach/courses/${course.id}/assignments/${a.id}`
+                      : `/courses/${course.slug}/assignments/${a.id}`
+                  }
+                  className="flex items-center justify-between px-6 py-4 text-sm hover:bg-muted"
+                >
+                  <span className="font-medium">{a.title}</span>
+                  <span className="text-muted-foreground">
+                    {a.maxPoints} pts
+                    {a.dueAt ? (
+                      <>
+                        {" · due "}
+                        <LocalDateTime iso={a.dueAt.toISOString()} dateOnly />
+                      </>
+                    ) : null}
+                  </span>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
     </div>
   );
 }
