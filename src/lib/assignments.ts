@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { can, DomainError, NotFoundError, type Actor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/learn";
+import { notify } from "@/lib/notifications";
 import { evaluateSubmissionWindow, isValidGrade } from "@/lib/submission-rules";
 
 /**
@@ -143,6 +144,14 @@ export async function gradeSubmission(opts: {
     await tx.submission.update({
       where: { id: submission.id },
       data: { status: "GRADED" },
+    });
+    // Notify the student in the same tx — no grade without its notification.
+    await notify(tx, submission.studentId, "GRADED", {
+      courseSlug: submission.assignment.course.slug,
+      assignmentId: submission.assignmentId,
+      assignmentTitle: submission.assignment.title,
+      points: opts.points,
+      maxPoints: submission.assignment.maxPoints,
     });
     return grade;
   });

@@ -42,7 +42,15 @@ export function AssignmentsList({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Assignments</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Assignments</CardTitle>
+          <Link
+            href={`/teach/courses/${courseId}/gradebook`}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Gradebook →
+          </Link>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {assignments.length === 0 ? (
