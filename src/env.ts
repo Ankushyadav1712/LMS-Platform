@@ -18,6 +18,10 @@ export const env = createEnv({
     S3_SECRET_ACCESS_KEY: z.string().min(1),
     S3_BUCKET: z.string().min(1),
     S3_REGION: z.string().min(1),
+    // AI-assisted grading is optional: without a key the feature is simply
+    // unavailable (the API returns 503 and the UI hides the button).
+    ANTHROPIC_API_KEY: z.string().optional(),
+    AI_GRADING_MODEL: z.string().default("claude-opus-5"),
   },
   client: {},
   runtimeEnv: {
@@ -31,6 +35,8 @@ export const env = createEnv({
     S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
     S3_BUCKET: process.env.S3_BUCKET,
     S3_REGION: process.env.S3_REGION,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    AI_GRADING_MODEL: process.env.AI_GRADING_MODEL,
   },
   emptyStringAsUndefined: true,
 });

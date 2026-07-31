@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { classifyInstructorAction } from "@/lib/ai-grading-rules";
 import { can, DomainError, NotFoundError, type Actor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/learn";
@@ -114,7 +115,7 @@ export async function gradeSubmission(opts: {
 }) {
   const submission = await db.submission.findUnique({
     where: { id: opts.submissionId },
-    include: { assignment: { include: { course: true } } },
+    include: { assignment: { include: { course: true } }, aiReview: true },
   });
   if (
     !submission ||
@@ -145,6 +146,21 @@ export async function gradeSubmission(opts: {
       where: { id: submission.id },
       data: { status: "GRADED" },
     });
+    // If an AI draft was pending, record how the instructor treated it. This
+    // is the only source of the agreement metric — measured, never asserted.
+    if (submission.aiReview && submission.aiReview.instructorAction === "PENDING") {
+      await tx.aiReview.update({
+        where: { submissionId: submission.id },
+        data: {
+          instructorAction: classifyInstructorAction({
+            suggestedScore: submission.aiReview.suggestedScore,
+            draftFeedback: submission.aiReview.draftFeedback,
+            finalPoints: opts.points,
+            finalFeedback: opts.feedback,
+          }),
+        },
+      });
+    }
     // Notify the student in the same tx — no grade without its notification.
     await notify(tx, submission.studentId, "GRADED", {
       courseSlug: submission.assignment.course.slug,
