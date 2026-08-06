@@ -5,6 +5,7 @@ import { draftFeedback, isAiGradingConfigured } from "@/lib/ai-grading";
 import { can, DomainError, NotFoundError } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { requireActor } from "@/lib/guards";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 /**
  * Draft AI feedback for one submission. Course-owner (or admin) only — a
@@ -39,6 +40,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         503,
       );
     }
+
+    // Every draft costs real money at the model provider — rate limit before
+    // spending any of it.
+    await enforceRateLimit(actor.id, "ai-draft");
 
     const draft = await draftFeedback({
       assignmentTitle: submission.assignment.title,

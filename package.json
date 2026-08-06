@@ -19,7 +19,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed"
+    "db:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed",
+    "db:seed:load": "tsx prisma/seed-load.ts"
   },
   "packageManager": "pnpm@10.28.2",
   "dependencies": {

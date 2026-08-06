@@ -12,6 +12,15 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated Prisma client.
+    "src/generated/**",
+    // Transient benchmarking/profiling scratch files at the repo root — real
+    // project code lives in src/, prisma/, and worker/ (also gitignored).
+    "bench*.ts",
+    "probe*.ts",
+    "_probe*.ts",
+    "__*.ts",
+    "*.audit.ts",
   ]),
 ]);
 
