@@ -299,8 +299,8 @@ model Submission {
   status        SubmissionStatus @default(SUBMITTED)
   submittedAt   DateTime         @default(now())
 
-  grades   Grade[]
-  aiReview AiReview?
+  grades    Grade[]
+  aiReviews AiReview[]
 
   @@unique([assignmentId, studentId, attemptNumber])
   @@index([studentId])
@@ -331,17 +331,25 @@ enum AiReviewAction {
 
 model AiReview {
   id               String         @id @default(cuid())
-  submissionId     String         @unique
+  submissionId     String
   submission       Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   draftFeedback    String
   suggestedScore   Int?
   model            String
   promptTokens     Int?
   completionTokens Int?
+  // The model's own report that the submission tried to instruct it. Persisted
+  // (not just returned once) so the warning survives a reload and is visible
+  // to anyone who later reviews the submission.
+  injectionReported Boolean       @default(false)
   // Powers the instructor-agreement metric. The AI never grades autonomously.
   instructorAction AiReviewAction @default(PENDING)
   createdAt        DateTime       @default(now())
 
+  // Append-only, same as Grade: re-drafting adds a row instead of overwriting,
+  // so a recorded ACCEPTED/EDITED/REJECTED can never be erased from the
+  // agreement metric. Current draft = latest row.
+  @@index([submissionId, createdAt])
   @@map("ai_reviews")
 }
 

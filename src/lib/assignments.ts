@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { classifyInstructorAction } from "@/lib/ai-grading-rules";
 import { can, DomainError, NotFoundError, type Actor } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { getEnrollment } from "@/lib/learn";
@@ -114,7 +115,11 @@ export async function gradeSubmission(opts: {
 }) {
   const submission = await db.submission.findUnique({
     where: { id: opts.submissionId },
-    include: { assignment: { include: { course: true } } },
+    include: {
+      assignment: { include: { course: true } },
+      // Latest draft only — that's the one the instructor was looking at.
+      aiReviews: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
   if (
     !submission ||
@@ -145,6 +150,24 @@ export async function gradeSubmission(opts: {
       where: { id: submission.id },
       data: { status: "GRADED" },
     });
+    // Record how the instructor treated the latest AI draft. This is the only
+    // source of the agreement metric — measured, never asserted. Re-classified
+    // on every grade (including a regrade) so the verdict always reflects the
+    // *current* grade rather than a stale first impression.
+    const latestDraft = submission.aiReviews[0];
+    if (latestDraft) {
+      await tx.aiReview.update({
+        where: { id: latestDraft.id },
+        data: {
+          instructorAction: classifyInstructorAction({
+            suggestedScore: latestDraft.suggestedScore,
+            draftFeedback: latestDraft.draftFeedback,
+            finalPoints: opts.points,
+            finalFeedback: opts.feedback,
+          }),
+        },
+      });
+    }
     // Notify the student in the same tx — no grade without its notification.
     await notify(tx, submission.studentId, "GRADED", {
       courseSlug: submission.assignment.course.slug,

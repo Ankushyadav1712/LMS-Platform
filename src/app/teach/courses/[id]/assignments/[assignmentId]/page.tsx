@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { agreementRate } from "@/lib/ai-grading-rules";
+import { isAiGradingConfigured } from "@/lib/ai-grading";
 import { can } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { requirePageRole } from "@/lib/guards";
@@ -31,8 +33,25 @@ export default async function AssignmentEditorPage({
     include: {
       student: { select: { id: true, name: true, email: true } },
       grades: { orderBy: { gradedAt: "desc" }, take: 1 },
+      // Append-only history; the newest row is the current draft.
+      aiReviews: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     orderBy: [{ studentId: "asc" }, { attemptNumber: "desc" }],
+  });
+
+  // Agreement rate across this assignment's reviewed AI drafts — the honest
+  // measurement behind any "instructors accepted N% of AI drafts" claim.
+  const actionCounts = await db.aiReview.groupBy({
+    by: ["instructorAction"],
+    where: { submission: { assignmentId } },
+    _count: { _all: true },
+  });
+  const countFor = (action: string) =>
+    actionCounts.find((c) => c.instructorAction === action)?._count._all ?? 0;
+  const agreement = agreementRate({
+    accepted: countFor("ACCEPTED"),
+    edited: countFor("EDITED"),
+    rejected: countFor("REJECTED"),
   });
 
   return (
@@ -63,6 +82,8 @@ export default async function AssignmentEditorPage({
         />
         <GradingQueue
           maxPoints={assignment.maxPoints}
+          aiEnabled={isAiGradingConfigured()}
+          agreement={agreement}
           submissions={submissions.map((s) => ({
             id: s.id,
             attemptNumber: s.attemptNumber,
@@ -74,6 +95,15 @@ export default async function AssignmentEditorPage({
             student: s.student,
             grade: s.grades[0]
               ? { points: s.grades[0].points, feedback: s.grades[0].feedback }
+              : null,
+            aiReview: s.aiReviews[0]
+              ? {
+                  draftFeedback: s.aiReviews[0].draftFeedback,
+                  suggestedScore: s.aiReviews[0].suggestedScore,
+                  model: s.aiReviews[0].model,
+                  instructorAction: s.aiReviews[0].instructorAction,
+                  injectionReported: s.aiReviews[0].injectionReported,
+                }
               : null,
           }))}
         />

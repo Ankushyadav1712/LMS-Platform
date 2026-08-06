@@ -47,6 +47,22 @@ Copy `.env.example` to `.env` first (defaults match `docker-compose.yml`). Video
 | `pnpm db:seed`                               | Idempotent demo seed (safe to re-run)        |
 | `pnpm db:studio`                             | Prisma Studio data browser                   |
 
+### AI-assisted grading (optional)
+
+Set `ANTHROPIC_API_KEY` in `.env` to enable the "Draft with AI" button in the grading queue. Without it the feature is simply unavailable — the endpoint returns 503 and the UI hides the control.
+
+**The AI never grades.** It drafts rubric-anchored feedback and a suggested score; the instructor reviews, edits, and approves, and only then does a grade exist.
+
+Every draft records how the instructor treated it, and drafts are append-only — re-drafting adds a row rather than overwriting, so a recorded verdict can never be erased from the metric:
+
+| Verdict    | Means                                                                |
+| ---------- | -------------------------------------------------------------------- |
+| `ACCEPTED` | The saved grade used the draft's score **and** its feedback verbatim |
+| `EDITED`   | One of the two was kept, the other changed                           |
+| `REJECTED` | Both changed, or the draft was dismissed / rolled over by a re-draft |
+
+The agreement rate in the grading queue is `ACCEPTED / reviewed`. It measures how often a draft was saved unchanged — not whether the instructor independently agreed with it.
+
 ## Architecture notes
 
 - **Video pipeline** (the interesting part): browser → presigned PUT direct to object storage → confirm endpoint verifies the object exists, flips the lecture to `PROCESSING`, and enqueues a pg-boss job → the worker downloads the raw file, probes it, transcodes a keyframe-aligned HLS ladder with ffmpeg (360p/720p/1080p, never upscaling), hand-writes the master playlist, uploads the build under a fresh prefix, and flips to `READY` — staleness-safe if the video was replaced mid-transcode. Failures retry with backoff, then dead-letter and mark the lecture `ERRORED`. Playback: **playlists proxy through the API** (tiny text, auth-checked on every request) while **segment bytes stream straight from storage** via presigned URLs embedded in the rewritten playlists — one auth check covers a hundred segment requests, the same problem CloudFront signed cookies solve.
