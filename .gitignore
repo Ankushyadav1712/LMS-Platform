@@ -43,7 +43,7 @@ next-env.d.ts
 
 /src/generated/prisma
 
-# transient query-profiling scratch files
+# transient query-profiling scratch files (committed harness lives in scripts/benchmarks/)
 bench*.ts
 *.audit.ts
 /_probe*.ts

@@ -20,7 +20,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:setup": "pnpm db:up && pnpm db:migrate && pnpm db:seed",
-    "db:seed:load": "tsx prisma/seed-load.ts"
+    "db:seed:load": "tsx prisma/seed-load.ts",
+    "bench:verify": "tsx scripts/benchmarks/verify-query-equivalence.ts && tsx scripts/benchmarks/verify-query-edge-cases.ts",
+    "bench:plans": "tsx scripts/benchmarks/capture-query-plans.ts"
   },
   "packageManager": "pnpm@10.28.2",
   "dependencies": {

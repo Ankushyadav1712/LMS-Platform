@@ -17,7 +17,7 @@ export async function getGradebook(courseId: string): Promise<Gradebook> {
   const [enrollments, assignments] = await Promise.all([
     db.enrollment.findMany({
       where: { courseId, status: { not: "DROPPED" } },
-      include: { student: { select: { id: true, name: true, email: true } } },
+      select: { studentId: true, student: { select: { id: true, name: true, email: true } } },
       orderBy: { student: { name: "asc" } },
     }),
     db.assignment.findMany({
@@ -27,14 +27,23 @@ export async function getGradebook(courseId: string): Promise<Gradebook> {
     }),
   ]);
 
-  const studentIds = enrollments.map((e) => e.studentId);
+  const enrolledIds = new Set(enrollments.map((e) => e.studentId));
   const assignmentIds = assignments.map((a) => a.id);
 
+  // Filtered by assignment only. Adding `studentId: { in: [...] }` was
+  // redundant — these assignments already scope the course — and the 400-value
+  // ANY() cost more to plan than to run: it forced a Seq Scan (2800 rows
+  // discarded) instead of using the (assignmentId, studentId, attemptNumber)
+  // unique index. DROPPED students are filtered below instead.
   const submissions =
-    studentIds.length && assignmentIds.length
+    enrolledIds.size && assignmentIds.length
       ? await db.submission.findMany({
-          where: { studentId: { in: studentIds }, assignmentId: { in: assignmentIds } },
-          include: { grades: { orderBy: { gradedAt: "desc" }, take: 1 } },
+          where: { assignmentId: { in: assignmentIds } },
+          select: {
+            studentId: true,
+            assignmentId: true,
+            grades: { orderBy: { gradedAt: "desc" }, take: 1, select: { points: true } },
+          },
           orderBy: { attemptNumber: "desc" },
         })
       : [];
@@ -43,6 +52,7 @@ export async function getGradebook(courseId: string): Promise<Gradebook> {
   // (student, assignment) is the current grade.
   const cells: Record<string, number> = {};
   for (const s of submissions) {
+    if (!enrolledIds.has(s.studentId)) continue; // keeps DROPPED students out
     const key = `${s.studentId}:${s.assignmentId}`;
     if (cells[key] === undefined && s.grades[0]) cells[key] = s.grades[0].points;
   }
