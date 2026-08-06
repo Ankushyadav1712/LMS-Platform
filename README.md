@@ -51,7 +51,17 @@ Copy `.env.example` to `.env` first (defaults match `docker-compose.yml`). Video
 
 Set `ANTHROPIC_API_KEY` in `.env` to enable the "Draft with AI" button in the grading queue. Without it the feature is simply unavailable — the endpoint returns 503 and the UI hides the control.
 
-**The AI never grades.** It drafts rubric-anchored feedback and a suggested score; the instructor reviews, edits, and approves, and only then does a grade exist. Every draft records how the instructor treated it (`ACCEPTED` / `EDITED` / `REJECTED`), which is where the agreement rate shown in the grading queue comes from — a measured number, not a claim.
+**The AI never grades.** It drafts rubric-anchored feedback and a suggested score; the instructor reviews, edits, and approves, and only then does a grade exist.
+
+Every draft records how the instructor treated it, and drafts are append-only — re-drafting adds a row rather than overwriting, so a recorded verdict can never be erased from the metric:
+
+| Verdict    | Means                                                                |
+| ---------- | -------------------------------------------------------------------- |
+| `ACCEPTED` | The saved grade used the draft's score **and** its feedback verbatim |
+| `EDITED`   | One of the two was kept, the other changed                           |
+| `REJECTED` | Both changed, or the draft was dismissed / rolled over by a re-draft |
+
+The agreement rate in the grading queue is `ACCEPTED / reviewed`. It measures how often a draft was saved unchanged — not whether the instructor independently agreed with it.
 
 ## Architecture notes
 

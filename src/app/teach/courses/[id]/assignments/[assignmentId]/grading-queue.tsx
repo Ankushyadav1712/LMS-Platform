@@ -14,6 +14,7 @@ type AiReview = {
   suggestedScore: number | null;
   model: string;
   instructorAction: string;
+  injectionReported: boolean;
 };
 
 type Submission = {
@@ -77,7 +78,6 @@ function Row({
   const [points, setPoints] = useState<string | number>(submission.grade?.points ?? "");
   const [feedback, setFeedback] = useState(submission.grade?.feedback ?? "");
   const [open, setOpen] = useState(false);
-  const [injectionWarning, setInjectionWarning] = useState(false);
   const { pending, error, run } = useApiAction();
 
   function grade(e: React.FormEvent) {
@@ -92,13 +92,10 @@ function Row({
   }
 
   // The AI drafts; the instructor decides. Nothing is graded until they submit.
+  // The draft (and its injection flag) is persisted, so router.refresh() shows
+  // the result — no transient client state to lose on reload.
   function draftWithAi() {
-    setInjectionWarning(false);
-    run(() => fetch(`/api/v1/submissions/${submission.id}/ai-review`, { method: "POST" }), {
-      onSuccess: (body: { aiReview: AiReview; injectionAttempted: boolean }) => {
-        setInjectionWarning(body.injectionAttempted);
-      },
-    });
+    run(() => fetch(`/api/v1/submissions/${submission.id}/ai-review`, { method: "POST" }));
   }
 
   function dismissDraft() {
@@ -152,16 +149,20 @@ function Row({
             <p className="text-sm text-muted-foreground">(No content)</p>
           ) : null}
 
-          {aiEnabled ? (
+          {/* An existing draft stays visible even if AI grading is later turned
+              off — only the actions depend on it being configured. */}
+          {aiEnabled || ai ? (
             <div className="rounded-md border border-dashed p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-medium text-muted-foreground">
                   AI draft — you review, edit, and approve. Nothing is graded until you save.
                 </p>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={draftWithAi} disabled={pending}>
-                    {pending ? "Drafting…" : ai ? "Re-draft" : "Draft with AI"}
-                  </Button>
+                  {aiEnabled ? (
+                    <Button size="sm" variant="outline" onClick={draftWithAi} disabled={pending}>
+                      {pending ? "Drafting…" : ai ? "Re-draft" : "Draft with AI"}
+                    </Button>
+                  ) : null}
                   {ai && ai.instructorAction === "PENDING" ? (
                     <Button size="sm" variant="ghost" onClick={dismissDraft} disabled={pending}>
                       Dismiss
@@ -170,10 +171,12 @@ function Row({
                 </div>
               </div>
 
-              {injectionWarning ? (
+              {ai?.injectionReported ? (
                 <p className="mt-2 rounded bg-destructive/10 p-2 text-xs text-destructive">
-                  ⚠ This submission appears to contain instructions aimed at the AI (a
-                  prompt-injection attempt). Read it yourself before grading.
+                  ⚠ The model reported that this submission contains instructions aimed at it (a
+                  prompt-injection attempt). Treat the draft below with extra scepticism and read
+                  the submission yourself. Note this is the model&apos;s own report — a successful
+                  injection could also suppress it.
                 </p>
               ) : null}
 

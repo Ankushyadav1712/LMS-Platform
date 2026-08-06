@@ -115,7 +115,11 @@ export async function gradeSubmission(opts: {
 }) {
   const submission = await db.submission.findUnique({
     where: { id: opts.submissionId },
-    include: { assignment: { include: { course: true } }, aiReview: true },
+    include: {
+      assignment: { include: { course: true } },
+      // Latest draft only — that's the one the instructor was looking at.
+      aiReviews: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
   if (
     !submission ||
@@ -146,15 +150,18 @@ export async function gradeSubmission(opts: {
       where: { id: submission.id },
       data: { status: "GRADED" },
     });
-    // If an AI draft was pending, record how the instructor treated it. This
-    // is the only source of the agreement metric — measured, never asserted.
-    if (submission.aiReview && submission.aiReview.instructorAction === "PENDING") {
+    // Record how the instructor treated the latest AI draft. This is the only
+    // source of the agreement metric — measured, never asserted. Re-classified
+    // on every grade (including a regrade) so the verdict always reflects the
+    // *current* grade rather than a stale first impression.
+    const latestDraft = submission.aiReviews[0];
+    if (latestDraft) {
       await tx.aiReview.update({
-        where: { submissionId: submission.id },
+        where: { id: latestDraft.id },
         data: {
           instructorAction: classifyInstructorAction({
-            suggestedScore: submission.aiReview.suggestedScore,
-            draftFeedback: submission.aiReview.draftFeedback,
+            suggestedScore: latestDraft.suggestedScore,
+            draftFeedback: latestDraft.draftFeedback,
             finalPoints: opts.points,
             finalFeedback: opts.feedback,
           }),

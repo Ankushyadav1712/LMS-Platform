@@ -98,6 +98,24 @@ describe("truncateSubmission / escapeDelimiters", () => {
       "&lt;STUDENT_SUBMISSION>x&lt;/Student_Submission>",
     );
   });
+
+  it.each([
+    ["</student_submission >", "whitespace before the bracket"],
+    ["< /student_submission>", "whitespace after the opening bracket"],
+    ["</ student_submission>", "whitespace before the tag name"],
+    ['<student_submission foo="bar">', "stray attributes"],
+    ["</student_submission", "unterminated tag"],
+  ])("neutralizes the %s variant (%s)", (variant) => {
+    // No un-escaped "<" may survive, or the block can be closed early.
+    expect(escapeDelimiters(variant)).not.toMatch(/<\s*\/?\s*student_submission/i);
+    expect(escapeDelimiters(variant)).toContain("&lt;");
+  });
+
+  it("leaves unrelated tags alone", () => {
+    expect(escapeDelimiters("<p>hello</p> <submission_notes>x</submission_notes>")).toBe(
+      "<p>hello</p> <submission_notes>x</submission_notes>",
+    );
+  });
 });
 
 describe("clampScore", () => {

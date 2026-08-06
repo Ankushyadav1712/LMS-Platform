@@ -33,7 +33,8 @@ export default async function AssignmentEditorPage({
     include: {
       student: { select: { id: true, name: true, email: true } },
       grades: { orderBy: { gradedAt: "desc" }, take: 1 },
-      aiReview: true,
+      // Append-only history; the newest row is the current draft.
+      aiReviews: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     orderBy: [{ studentId: "asc" }, { attemptNumber: "desc" }],
   });
@@ -95,12 +96,13 @@ export default async function AssignmentEditorPage({
             grade: s.grades[0]
               ? { points: s.grades[0].points, feedback: s.grades[0].feedback }
               : null,
-            aiReview: s.aiReview
+            aiReview: s.aiReviews[0]
               ? {
-                  draftFeedback: s.aiReview.draftFeedback,
-                  suggestedScore: s.aiReview.suggestedScore,
-                  model: s.aiReview.model,
-                  instructorAction: s.aiReview.instructorAction,
+                  draftFeedback: s.aiReviews[0].draftFeedback,
+                  suggestedScore: s.aiReviews[0].suggestedScore,
+                  model: s.aiReviews[0].model,
+                  instructorAction: s.aiReviews[0].instructorAction,
+                  injectionReported: s.aiReviews[0].injectionReported,
                 }
               : null,
           }))}

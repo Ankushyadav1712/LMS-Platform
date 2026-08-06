@@ -50,33 +50,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       isLate: submission.isLate,
     });
 
-    // One draft per submission: re-drafting replaces the previous one and
-    // resets the instructor-action state to PENDING.
-    const aiReview = await db.aiReview.upsert({
-      where: { submissionId: submission.id },
-      create: {
-        submissionId: submission.id,
-        draftFeedback: draft.feedback,
-        suggestedScore: draft.suggestedScore,
-        model: draft.model,
-        promptTokens: draft.promptTokens,
-        completionTokens: draft.completionTokens,
-      },
-      update: {
-        draftFeedback: draft.feedback,
-        suggestedScore: draft.suggestedScore,
-        model: draft.model,
-        promptTokens: draft.promptTokens,
-        completionTokens: draft.completionTokens,
-        instructorAction: "PENDING",
-      },
+    // Append-only (same as Grade rows): re-drafting adds a row rather than
+    // overwriting, so an already-recorded ACCEPTED/EDITED/REJECTED can never be
+    // erased from the agreement metric. Any older draft still PENDING is
+    // resolved as REJECTED — the instructor rolled it over by re-drafting.
+    const aiReview = await db.$transaction(async (tx) => {
+      await tx.aiReview.updateMany({
+        where: { submissionId: submission.id, instructorAction: "PENDING" },
+        data: { instructorAction: "REJECTED" },
+      });
+      return tx.aiReview.create({
+        data: {
+          submissionId: submission.id,
+          draftFeedback: draft.feedback,
+          suggestedScore: draft.suggestedScore,
+          model: draft.model,
+          promptTokens: draft.promptTokens,
+          completionTokens: draft.completionTokens,
+          injectionReported: draft.injectionAttempted,
+        },
+      });
     });
 
-    return NextResponse.json({
-      aiReview,
-      // Surfaced so the instructor knows to read the submission sceptically.
-      injectionAttempted: draft.injectionAttempted,
-    });
+    return NextResponse.json({ aiReview });
   } catch (e) {
     return errorResponse(e);
   }
@@ -101,6 +97,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       throw new NotFoundError("Submission not found");
     }
 
+    // The row survives as history; only its verdict changes.
     const updated = await db.aiReview.updateMany({
       where: { submissionId: submission.id, instructorAction: "PENDING" },
       data: { instructorAction: "REJECTED" },

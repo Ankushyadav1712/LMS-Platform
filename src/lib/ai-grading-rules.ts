@@ -30,12 +30,16 @@ export function truncateSubmission(text: string, maxChars = MAX_SUBMISSION_CHARS
 }
 
 /**
- * Neutralize an attempt to close our delimiter and inject sibling tags.
- * Belt-and-braces: the model is told the block is data, and the block can't
- * be escaped with a literal `</student_submission>`.
+ * Neutralize any attempt to close our delimiter and inject sibling tags.
+ * Matches tag variants a model would still read as the delimiter — internal
+ * whitespace (`</student_submission >`), stray attributes, or a missing `>`
+ * — not just the exact string we emit.
+ *
+ * Belt-and-braces: the model is told the block is data, and the block can't be
+ * escaped by writing the delimiter back at us.
  */
 export function escapeDelimiters(text: string): string {
-  return text.replace(/<\/?student_submission>/gi, (m) => m.replace(/</g, "&lt;"));
+  return text.replace(/<\s*\/?\s*student_submission\b[^>]*>?/gi, (m) => m.replace(/</g, "&lt;"));
 }
 
 /** Build the user-turn prompt: trusted context first, untrusted work last. */

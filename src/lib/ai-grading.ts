@@ -60,16 +60,28 @@ export async function draftFeedback(input: {
     );
   }
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  // An instructor is waiting on this: fail fast rather than riding the SDK's
+  // 10-minute default (which retries, so worst case is ~30 minutes).
+  const client = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    timeout: 120_000,
+    maxRetries: 1,
+  });
 
   let message;
   try {
     message = await client.messages.parse({
       model: env.AI_GRADING_MODEL,
-      max_tokens: 4000,
+      // max_tokens caps thinking AND response text together, and on the
+      // default model (claude-opus-5) adaptive thinking is ON unless disabled.
+      // Too small a budget truncates the structured output mid-JSON, which the
+      // SDK then fails to parse. Give it real headroom.
+      max_tokens: 16_000,
+      // Drafting rubric-anchored feedback is routine work: medium effort keeps
+      // thinking (and cost) proportionate without hurting quality.
+      output_config: { effort: "medium", format: zodOutputFormat(draftSchema) },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildGradingPrompt(input) }],
-      output_config: { format: zodOutputFormat(draftSchema) },
     });
   } catch (e) {
     // Rate limits and upstream outages are transient — say so plainly rather
@@ -85,6 +97,20 @@ export async function draftFeedback(input: {
     if (e instanceof Anthropic.APIError) {
       console.error("Anthropic API error:", e.status, e.message);
       throw new DomainError("AI_FAILED", "AI grading is unavailable right now", undefined, 502);
+    }
+    // Must come AFTER APIError: the SDK's APIError extends AnthropicError, so
+    // checking the base class first would swallow every API error. This branch
+    // catches structured-output parse failures (truncated or schema-invalid
+    // JSON), which messages.parse() throws as a bare AnthropicError — without
+    // it they escape as an opaque 500.
+    if (e instanceof Anthropic.AnthropicError) {
+      console.error("Anthropic output parse error:", e.message);
+      throw new DomainError(
+        "AI_FAILED",
+        "AI grading returned an unusable response — try drafting again",
+        undefined,
+        502,
+      );
     }
     throw e;
   }
