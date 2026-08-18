@@ -7,6 +7,7 @@ import { getSubmittableAssignment } from "@/lib/assignments";
 import { DomainError } from "@/lib/authz";
 import { getOwnedCourse, getOwnedLecture } from "@/lib/courses";
 import { requireActor } from "@/lib/guards";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { presignUpload } from "@/lib/s3";
 
 // NOTE: per-actor rate limiting for presign issuance lands with the global
@@ -59,6 +60,8 @@ const bodySchema = z.discriminatedUnion("purpose", [
 export async function POST(request: Request) {
   try {
     const actor = await requireActor();
+    // Bounds storage-filling abuse: a signed URL is a write capability.
+    await enforceRateLimit(actor.id, "presign");
     const body = await parseBody(request, bodySchema);
 
     let key: string;

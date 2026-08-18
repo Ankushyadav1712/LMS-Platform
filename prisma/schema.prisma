@@ -353,6 +353,23 @@ model AiReview {
   @@map("ai_reviews")
 }
 
+/// Fixed-window rate-limit counters. Postgres rather than Redis: one datastore
+/// to run on a student budget, and an atomic upsert is all the consistency a
+/// per-actor counter needs. Rows are self-expiring — a window whose start has
+/// aged out is reset in place on the next hit.
+model RateLimitHit {
+  id             String   @id @default(cuid())
+  /// Actor id, or "ip:1.2.3.4" for unauthenticated callers.
+  subject        String
+  action         String
+  hits           Int      @default(0)
+  windowStartedAt DateTime @default(now())
+
+  @@unique([subject, action])
+  @@index([windowStartedAt])
+  @@map("rate_limit_hits")
+}
+
 // ============================================================
 // Async processing & notifications
 // ============================================================

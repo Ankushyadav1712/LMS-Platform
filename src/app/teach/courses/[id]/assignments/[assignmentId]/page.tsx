@@ -41,9 +41,14 @@ export default async function AssignmentEditorPage({
 
   // Agreement rate across this assignment's reviewed AI drafts — the honest
   // measurement behind any "instructors accepted N% of AI drafts" claim.
+  // Filtered by submission id, not through the `submission` relation: the
+  // relation filter put the predicate on the joined table, so no index on
+  // ai_reviews could prune it and the scan grew with *global* review volume.
+  // `submissions` above is every submission for this assignment, so the id
+  // sets are identical.
   const actionCounts = await db.aiReview.groupBy({
     by: ["instructorAction"],
-    where: { submission: { assignmentId } },
+    where: { submissionId: { in: submissions.map((s) => s.id) } },
     _count: { _all: true },
   });
   const countFor = (action: string) =>

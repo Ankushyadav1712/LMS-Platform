@@ -1,5 +1,6 @@
 import { can, DomainError, NotFoundError, type Actor } from "@/lib/authz";
 import { db } from "@/lib/db";
+import { toProgress, type CourseProgress } from "@/lib/progress-rules";
 import { Prisma } from "@/generated/prisma/client";
 
 /**
@@ -102,11 +103,46 @@ export async function getCourseProgress(studentId: string, courseId: string) {
       },
     }),
   ]);
-  return {
-    total,
-    completed,
-    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
-  };
+  return toProgress(total, completed);
+}
+
+/**
+ * Progress for many courses in two grouped queries instead of two per course.
+ * The dashboard was 2N+2 queries — every extra enrollment added a round trip,
+ * and all N pairs re-scanned the same lectures/sections. Prisma can't group
+ * across a relation, hence the raw aggregate.
+ *
+ * Courses with no published lectures are absent from both result sets and fall
+ * through to total 0 — same answer getCourseProgress gives them.
+ */
+export async function getProgressForCourses(
+  studentId: string,
+  courseIds: string[],
+): Promise<Map<string, CourseProgress>> {
+  if (courseIds.length === 0) return new Map();
+
+  const [totals, completed] = await Promise.all([
+    db.$queryRaw<{ courseId: string; n: bigint }[]>`
+      SELECT s."courseId" AS "courseId", COUNT(*)::bigint AS n
+      FROM lectures l
+      JOIN sections s ON s.id = l."sectionId"
+      WHERE l."isPublished" AND s."isPublished" AND s."courseId" = ANY(${courseIds})
+      GROUP BY s."courseId"`,
+    db.$queryRaw<{ courseId: string; n: bigint }[]>`
+      SELECT s."courseId" AS "courseId", COUNT(*)::bigint AS n
+      FROM lecture_progress p
+      JOIN lectures l ON l.id = p."lectureId"
+      JOIN sections s ON s.id = l."sectionId"
+      WHERE p."studentId" = ${studentId} AND p."isCompleted"
+        AND l."isPublished" AND s."isPublished" AND s."courseId" = ANY(${courseIds})
+      GROUP BY s."courseId"`,
+  ]);
+
+  const totalBy = new Map(totals.map((r) => [r.courseId, Number(r.n)]));
+  const completedBy = new Map(completed.map((r) => [r.courseId, Number(r.n)]));
+  return new Map(
+    courseIds.map((id) => [id, toProgress(totalBy.get(id) ?? 0, completedBy.get(id) ?? 0)]),
+  );
 }
 
 /** Ordered published lectures of a course — drives prev/next navigation. */

@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { can } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { toActor } from "@/lib/guards";
-import { getCourseProgress } from "@/lib/learn";
+import { getProgressForCourses } from "@/lib/learn";
 import { getSession } from "@/lib/session";
 
 // The real auth boundary: proxy.ts only checks cookie presence.
@@ -25,12 +25,15 @@ export default async function DashboardPage() {
     include: { course: { select: { id: true, slug: true, title: true } } },
     orderBy: { enrolledAt: "desc" },
   });
-  const withProgress = await Promise.all(
-    enrollments.map(async (e) => ({
-      ...e,
-      progress: await getCourseProgress(actor.id, e.courseId),
-    })),
+  // Two grouped queries for all enrollments, not two per enrollment.
+  const progressByCourse = await getProgressForCourses(
+    actor.id,
+    enrollments.map((e) => e.courseId),
   );
+  const withProgress = enrollments.map((e) => ({
+    ...e,
+    progress: progressByCourse.get(e.courseId) ?? { total: 0, completed: 0, percent: 0 },
+  }));
 
   return (
     <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">

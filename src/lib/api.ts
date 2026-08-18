@@ -14,9 +14,15 @@ function isKnownError(e: unknown): e is KnownError {
 /** Uniform error envelope: { error: { code, message, ...details } }. */
 export function errorResponse(e: unknown): NextResponse {
   if (e instanceof DomainError) {
+    // A rate-limited response must tell the client when to come back, or
+    // well-behaved clients can only guess (and badly-behaved ones hot-loop).
+    const retryAfter = e.details?.retryAfterSeconds;
     return NextResponse.json(
       { error: { code: e.code, message: e.message, ...(e.details ?? {}) } },
-      { status: e.status },
+      {
+        status: e.status,
+        headers: typeof retryAfter === "number" ? { "Retry-After": String(retryAfter) } : undefined,
+      },
     );
   }
   if (isKnownError(e)) {

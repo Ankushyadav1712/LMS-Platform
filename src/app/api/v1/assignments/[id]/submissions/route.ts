@@ -6,6 +6,7 @@ import { getOwnedAssignment, getSubmittableAssignment, submitAttempt } from "@/l
 import { DomainError } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { requireActor } from "@/lib/guards";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const bodySchema = z.object({
   textContent: z.string().trim().max(50_000).nullish(),
@@ -18,6 +19,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: Request, { params }: Params) {
   try {
     const actor = await requireActor();
+    await enforceRateLimit(actor.id, "submit");
     const { id } = await params;
     const body = await parseBody(request, bodySchema);
 
